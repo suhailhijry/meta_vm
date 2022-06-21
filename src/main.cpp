@@ -3,11 +3,21 @@
 #include <cstring>
 #include <utils/assert.hpp>
 #include <utils/memory.hpp>
+#include <backward_cpp/backward.hpp>
 
+using namespace backward;
 using namespace achilles;
+
+void print_trace(void) {
+    StackTrace st;
+    st.load_here(32);
+    Printer p;
+    p.print(st);
+}
 
 bool aassert_handler(const char *conditionCode, const char *report) {
     std::printf("assertion %s failed, %s \n", conditionCode, report);
+    print_trace();
     return true;
 }
 
@@ -46,427 +56,1083 @@ using static_array = memory::static_array<T, size>;
 template<typename T>
 using memory_view = memory::memory_view<T>;
 
-constexpr u64 REGISTER_COUNT = 16;
-constexpr u64 FLOAT_REGISTER_COUNT = 16;
+enum VMOPCode {
+    // core and reserved
+    VMOPCODE_HLT = 0,
+    VMOPCODE_NOP,
+    
+    // move
+    VMOPCODE_MOV = 0x20,
+    VMOPCODE_MOVF,
+    
+    // stack push
+    VMOPCODE_PUSH,      VMOPCODE_POP,
 
-struct registers_t {
-    u64 ip; // instruction pointer
-    u64 sp; // stack pointer
-    u64 sr; // status register
-    u64 d[REGISTER_COUNT] = {0}; // data registers - general purpose
-    f64 f[FLOAT_REGISTER_COUNT] = {0}; // floating point registers
+    // arithmetics opcodes
+    VMOPCODE_ADD,       VMOPCODE_SUB,    VMOPCODE_MUL,    VMOPCODE_DIV,
+
+    // floating points arithmetics opcodes
+    VMOPCODE_ADDF,       VMOPCODE_SUBF,    VMOPCODE_MULF,    VMOPCODE_DIVF,
+
+    // bitwise operations
+    VMOPCODE_AND,        VMOPCODE_OR,    VMOPCODE_XOR,    VMOPCODE_NOT,
+
+    // comparison
+    VMOPCODE_CMP,
+
+    // jumps
+    VMOPCODE_JMP,       VMOPCODE_JME,    VMOPCODE_JNE,    VMOPCODE_JLT,
+    VMOPCODE_JGT,       VMOPCODE_JLE,    VMOPCODE_JGE,
+
+    // procedure calling
+    VMOPCODE_CALL,      VMOPCODE_RET,
+
+    // flags
+    VMOPCODE_CLR,
 };
 
-// op src dst
-enum VM_OP {
-    VM_OP_HLT = 0,
-    VM_OP_NOP,
-    VM_OP_MOV = 0x20,
-    VM_OP_MOVF,
-    VM_OP_PUSH,
-    VM_OP_POP,
-    VM_OP_PUSHF,
-    VM_OP_POPF,
-    VM_OP_ADD,
-    VM_OP_SUB,
-    VM_OP_MUL,
-    VM_OP_DIV,
-    VM_OP_ADDF,
-    VM_OP_SUBF,
-    VM_OP_MULF,
-    VM_OP_DIVF,
-    VM_OP_JMP,
-    VM_OP_CMP,
-    VM_OP_JME,
-    VM_OP_JNE,
-    VM_OP_CALL,
-    VM_OP_RET,
+union VMWord {
+    u8   ubytes[8];
+    s8   sbytes[8];
+
+    u16  uwords[4];
+    s16  swords[4];
+
+    u32 udwords[2];
+    s32 sdwords[2];
+
+    u64          u;
+    s64          s;
+    f64          f;
+
+    operator u64() const {
+        return u;
+    }
+
+    operator s64() const {
+        return s;
+    }
+
+    operator f64() const {
+        return f;
+    }
+
+    VMWord() {
+        u = 0;
+    }
+
+    VMWord(u64 value) {
+        u = value;
+    }
+
+    VMWord(u32 value) {
+        u = value;
+    }
+
+    VMWord(u16 value) {
+        u = value;
+    }
+
+    VMWord(u8 value) {
+        u = value;
+    }
+
+    VMWord(s64 value) {
+        s = value;
+    }
+
+    VMWord(s32 value) {
+        s = value;
+    }
+    
+    VMWord(s16 value) {
+        s = value;
+    }
+    
+    VMWord(s8 value) {
+        s = value;
+    }
+    
+    VMWord(f64 value) {
+        f = value;
+    }
 };
 
-enum VM_STATE {
-    VM_STATE_HALT,
-    VM_STATE_EXECUTE,
+enum VMOPType {
+    VMOPTYPE_UNUSED = 0b0,
+    VMOPTYPE_DATA_REGISTER = 0b1,
+    VMOPTYPE_SDATA_REGISTER = 0b10,
+    VMOPTYPE_FLOAT_REGISTER = 0b100,
+    VMOPTYPE_POINTER = 0b1000,
+    VMOPTYPE_IMMEDIATE_UNSIGNED = 0b10000,
+    VMOPTYPE_IMMEDIATE_SIGNED = 0b100000,
+    VMOPTYPE_IMMEDIATE_FLOAT = 0b1000000,
+    VMOPTYPE_IMMEDIATE = VMOPTYPE_IMMEDIATE_UNSIGNED | VMOPTYPE_IMMEDIATE_SIGNED | VMOPTYPE_IMMEDIATE_FLOAT,
+    // NOTE: cannot be used on float registers
+    VMOPTYPE_INDIRECT = 0b10000000, 
+    VMOPTYPE_DISPLACEMENT = 0b100000000,
 };
 
-template<typename stack_t, typename memory_t>
+struct VMOPCodeOperand {
+    VMOPType          type;
+    u8       registerIndex;
+    VMWord           value;
+};
+
+struct VMInstruction {
+    VMOPCode          opcode;
+    VMOPCodeOperand operand1;
+    VMOPCodeOperand operand2;
+    VMOPCodeOperand operand3;
+};
+
+union VMRegisters {
+    struct {
+        u64 data[16];
+        s64 flags[5];
+        f64 floats[16];
+    };
+
+    struct {
+        u64 rip, rsp, rbp, r03,
+            r04, r05, r06, r07,
+            r08, r09, r10, r11,
+            r12, r13, r14, r15;
+
+        s64 cf, sf, zf, of, mf;
+
+        f64 f00, f01, f02, f03,
+            f04, f05, f06, f07,
+            f08, f09, f10, f11,
+            f12, f13, f14, f15;
+    };
+
+    struct {
+        s64 sdata[16];
+    };
+
+    VMRegisters() {
+        std::memset(data, 0, 16);
+        std::memset(flags, 0, 5);
+        std::memset(floats, 0, 16);
+    }
+};
+
+const char *getOPName(VMOPCode op) {
+    #define opname(o) case o: return #o
+    switch(op) {
+        // core and reserved
+        opname(VMOPCODE_HLT);
+        opname(VMOPCODE_NOP);
+
+        // move opcodes
+        opname(VMOPCODE_MOV);      opname(VMOPCODE_MOVF);
+
+        // push opcodes
+        opname(VMOPCODE_PUSH);      opname(VMOPCODE_POP);
+
+        // arithmetics opcodes
+        opname(VMOPCODE_ADD);       opname(VMOPCODE_SUB);        opname(VMOPCODE_MUL);      opname(VMOPCODE_DIV);
+
+        // floating points arithmetics opcodes
+        opname(VMOPCODE_ADDF);     opname(VMOPCODE_SUBF);       opname(VMOPCODE_MULF);     opname(VMOPCODE_DIVF);
+
+        // bitwise operations
+        opname(VMOPCODE_AND);        opname(VMOPCODE_OR);        opname(VMOPCODE_XOR);      opname(VMOPCODE_NOT);
+
+        // comparison
+        opname(VMOPCODE_CMP);
+
+        // jumps
+        opname(VMOPCODE_JMP);       opname(VMOPCODE_JME);        opname(VMOPCODE_JNE);      opname(VMOPCODE_JLT);
+        opname(VMOPCODE_JGT);       opname(VMOPCODE_JLE);        opname(VMOPCODE_JGE);
+
+        // procedure calling
+        opname(VMOPCODE_CALL);      opname(VMOPCODE_RET);
+
+        // flags
+        opname(VMOPCODE_CLR);
+    }
+    #undef opname
+
+    return "";
+}
+
+enum VMState {
+    VMSTATE_HALT,
+    VMSTATE_EXECUTE,
+};
+
+enum VMException {
+    VMEXCEPT_TRUNCATED_CODE,
+    VMEXCEPT_INVALID_OPERANDS,
+    VMEXCEPT_STACK_OVERFLOW,
+    VMEXCEPT_INTEGER_OVERFLOW,
+};
+
+const char *getExceptionName(VMException exception) {
+    #define exname(e) case e: return #e
+
+    switch (exception) {
+        exname(VMEXCEPT_TRUNCATED_CODE);
+        exname(VMEXCEPT_INVALID_OPERANDS);
+        exname(VMEXCEPT_STACK_OVERFLOW);
+        exname(VMEXCEPT_INTEGER_OVERFLOW);
+    }
+
+    #undef exname
+
+    return "";
+}
+
+template<
+    typename TByteCode,
+    typename TMemory,
+    typename TExceptions 
+>
 struct MetaVM {
-    VM_STATE state = VM_STATE_EXECUTE; 
-    registers_t registers {0};
-    memory_view<u64> &bytecode;
-    memory_t &memory;
-    stack_t &stack;
-
     MetaVM (
-            memory_view<u64> &bytecode,
-            stack_t &stack,
-            memory_t &memory
-    ) : bytecode(bytecode),
-        stack(stack),
-        memory(memory) {}
+            TByteCode    &bytecode,
+            TMemory        &memory,
+            TExceptions &exceptions
+    ) :      _bytecode(bytecode),
+                 _memory(memory),
+         _exceptions(exceptions) {}
 
     void run() {
-        while (state != VM_STATE_HALT) {
-            switch (static_cast<VM_OP>(byte())) {
-                case VM_OP_HLT:
-                    hlt();
+        bool isRunning = true;
+        while (isRunning) {
+            VMInstruction inst = fetch();
+            VMOPCode op = inst.opcode;
+            switch (op) {
+                case VMOPCODE_HLT:
+                    isRunning = false;
                 break;
-                case VM_OP_MOV:
-                    mov();
+                case VMOPCODE_NOP:
+                    // do nothing
                 break;
-                case VM_OP_MOVF:
-                    movf();
+                case VMOPCODE_MOV:
+                    mov(inst);
                 break;
-                case VM_OP_PUSH:
-                    push();
+                case VMOPCODE_PUSH:
+                    push(inst);
                 break;
-                case VM_OP_POP:
-                    pop();
+                case VMOPCODE_POP:
+                    pop(inst);
                 break;
-                case VM_OP_PUSHF:
-                    pushf();
+                case VMOPCODE_ADD:
+                    add(inst);
                 break;
-                case VM_OP_POPF:
-                    popf();
+                case VMOPCODE_SUB:
+                    sub(inst);
                 break;
-                case VM_OP_NOP:
-                    advance();
+                case VMOPCODE_MUL:
+                    mul(inst);
                 break;
-                case VM_OP_ADD:
-                    add();
+                case VMOPCODE_DIV:
+                    div(inst);
                 break;
-                case VM_OP_SUB:
-                    sub();
+                case VMOPCODE_AND:
+                    vand(inst);
                 break;
-                case VM_OP_MUL:
-                    mul();
+                case VMOPCODE_OR:
+                    vor(inst);
                 break;
-                case VM_OP_DIV:
-                    div();
+                case VMOPCODE_XOR:
+                    vxor(inst);
                 break;
-                case VM_OP_ADDF:
-                    addf();
+                case VMOPCODE_NOT:
+                    vnot(inst);
                 break;
-                case VM_OP_SUBF:
-                    subf();
+                case VMOPCODE_CMP:
+                    cmp(inst);
                 break;
-                case VM_OP_MULF:
-                    mulf();
+                case VMOPCODE_JMP:
+                    jmp(inst);
                 break;
-                case VM_OP_DIVF:
-                    divf();
+                case VMOPCODE_JME:
+                    jme(inst);
                 break;
-                case VM_OP_JMP:
-                    jmp();
+                case VMOPCODE_JNE:
+                    jne(inst);
                 break;
-                case VM_OP_CMP:
-                    cmp();
+                case VMOPCODE_JLT:
+                    jlt(inst);
                 break;
-                case VM_OP_JME:
-                    jme();
+                case VMOPCODE_JGT:
+                    jgt(inst);
                 break;
-                case VM_OP_JNE:
-                    jne();
+                case VMOPCODE_JLE:
+                    jle(inst);
                 break;
-                case VM_OP_CALL:
-                    call();
+                case VMOPCODE_JGE:
+                    jge(inst);
                 break;
-                case VM_OP_RET:
-                    ret();
+                case VMOPCODE_CALL:
+                    call(inst);
+                break;
+                case VMOPCODE_RET:
+                    ret(inst);
+                break;
+                case VMOPCODE_CLR:
+                    clr(inst);
                 break;
             }
-            advance();
-        }
-    }
-    
-    void hlt() {
-        state = VM_STATE_HALT;
-        advance();
-    }
-    
-    void mov() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.d[ri] = operand;
-    }
-
-    void movf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 b = byte();
-        f64 operand = *reinterpret_cast<f64 *>(&b);
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.f[ri] = operand;
-    }
-
-    void push() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        stack.push(registers.d[ri]);
-        registers.sp++;
-    }
-
-    void pop() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.d[ri] = stack.pop();
-        registers.sp--;
-    }
-
-    void pushf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        stack.push(registers.f[ri]);
-        registers.sp++;
-    }
-
-    void popf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        u64 b = stack.pop();
-        f64 f = *reinterpret_cast<f64 *>(&b);
-        registers.f[ri] = f;
-        registers.sp--;
-    }
-
-    void add() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.d[ri] += operand;
-    }
-
-    void sub() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.d[ri] -= operand;
-    }
-
-    void mul() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.d[ri] *= operand;
-    }
-
-    void div() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.d[ri] /= operand;
-    }
-
-    void addf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 b = byte();
-        f64 operand = *reinterpret_cast<f64 *>(&b);
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.f[ri] += operand;
-    }
-
-    void subf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 b = byte();
-        f64 operand = *reinterpret_cast<f64 *>(&b);
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.f[ri] -= operand;
-    }
-
-    void mulf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 b = byte();
-        f64 operand = *reinterpret_cast<f64 *>(&b);
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.f[ri] *= operand;
-    }
-
-    void divf() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 b = byte();
-        f64 operand = *reinterpret_cast<f64 *>(&b);
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.f[ri] /= operand;
-    }
-
-    void jmp() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        aassert(operand < bytecode.length(), "segfault");
-        registers.ip = operand - 1;
-    }
-
-    void cmp() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 ri = byte();
-        registers.sr = operand == registers.d[ri];
-    }
-
-    void jme() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        aassert(operand < bytecode.length(), "segfault");
-        if (registers.sr) registers.ip = operand - 1;
-    }
-
-    void jne() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        aassert(operand < bytecode.length(), "segfault");
-        if (!registers.sr) registers.ip = operand - 1;
-    }
-
-    void call() {
-        advance();
-        aassert(state != VM_STATE_HALT, "invalid operation");
-        u64 operand = byte();
-        aassert(operand < bytecode.length(), "segfault");
-        stack.push(registers.ip);
-        registers.sp++;
-        registers.ip = operand - 1;
-    }
-
-    void ret() {
-        registers.ip = stack.pop();
-        registers.sp--;
-    }
-
-    u64 byte() {
-        return bytecode[registers.ip];
-    }
-
-    void advance() {
-        registers.ip++;
-        if (registers.sp >= stack.capacity()) {
-            printf("stack overflow\n");
-            state = VM_STATE_HALT;
-        }
-        if (registers.ip >= bytecode.length()) {
-            printf("program finished\n");
-            state = VM_STATE_HALT;
         }
     }
 
     void printRegisters() {
-        printf("REGISTERS:\n");
-        printf("ip: %llu ", registers.ip);
-        printf("sp: %llu ", registers.sp);
-        printf("sr: %llu ", registers.sr);
-        printf("\n");
-        for (u64 i = 0; i < REGISTER_COUNT; ++i) {
+        std::printf("REGISTERS:\n");
+        std::printf("DATA:\n");
+        for (u8 i = 0; i < 16; ++i) {
             if (i != 0 && i % 8 == 0) {
-                printf("\n");
+                std::printf("\n");
             }
             if (i < 10) {
-                printf("d0%llu: %llu ", i, registers.d[i]);
+                std::printf("data0%i: %#8llx ", i, _registers.data[i]);
             } else {
-                printf("d%llu: %llu ", i, registers.d[i]);
+                std::printf("data%i: %#8llx ", i, _registers.data[i]);
             }
         }
-        printf("\n");
-        for (u64 i = 0; i < FLOAT_REGISTER_COUNT; ++i) {
+        std::printf("\nFLOATS:\n");
+        for (u8 i = 0; i < 16; ++i) {
             if (i != 0 && i % 8 == 0) {
-                printf("\n");
+                std::printf("\n");
             }
             if (i < 10) {
-                printf("f0%llu: %lf ", i, registers.f[i]);
+                std::printf("float0%i: %lf ", i, _registers.floats[i]);
             } else {
-                printf("f%llu: %lf ", i, registers.f[i]);
+                std::printf("float%i: %lf ", i, _registers.floats[i]);
             }
         }
-        printf("\n");
-    }
-
-    void printStack() {
-        printf("STACK:\n");
-        for (u64 i = 0; i < stack.capacity(); ++i) {
-            if (i != 0 && i % 8 == 0) {
-                printf("\n");
-            }
-            printf("0x%llX ", stack[i]);
-        }
-        printf("\n");
+        std::printf("\n");
     }
 
     void printMemory() {
-        printf("Memory:\n");
-        for (u64 i = 0; i < memory.length(); ++i) {
+        std::printf("MEMORY:\n");
+        for (u64 i = 0; i < _memory.length(); ++i) {
             if (i != 0 && i % 8 == 0) {
-                printf("\n");
+                std::printf("\n");
             }
-            printf("0x%llX ", memory[i]);
+            std::printf("%#8llx ", _memory[i].u);
         }
-        printf("\n");
+        std::printf("\n");
+    }
+
+    void printStack() {
+        std::printf("STACK:\n");
+        u64 size = _memory.size();
+        u64 top = size - 1;
+        for (u64 i = 0; i < _registers.rsp; ++i) {
+            if (i != 0 && i % 8 == 0) {
+                std::printf("\n");
+            }
+            std::printf("%#8llx ", _memory[top - i]);
+        }
+        std::printf("\n");
+    }
+
+    void printExceptions() {
+        printf("EXCEPTIONS:\n");
+        for (u64 i = 0; i < _exceptions.length(); ++i) {
+            std::printf("%s\n", getExceptionName(_exceptions[i]));
+        }
+        std::printf("\n");
     }
 
     void printAll() {
         printRegisters();
-        printStack();
         printMemory();
+        printStack();
+        printExceptions();
+    }
+private:
+    VMRegisters       _registers;
+    TByteCode         &_bytecode;
+    TMemory             &_memory;
+    TExceptions     &_exceptions;
+
+    u64 getLocation(VMOPCodeOperand const &operand) const {
+        return _registers.data[operand.registerIndex];
+    }
+
+    u64 getDisplaced(VMOPCodeOperand const &operand) const {
+        return _registers.data[operand.registerIndex] + operand.value.u;
+    }
+
+    u64 &getDataRegister(VMOPCodeOperand const &operand) {
+        return _registers.data[operand.registerIndex];
+    }
+
+    s64 &getSignedDataRegister(VMOPCodeOperand const &operand) {
+        return _registers.sdata[operand.registerIndex];
+    }
+
+    f64 &getFloatRegister(VMOPCodeOperand const &operand) {
+        return _registers.floats[operand.registerIndex];
+    }
+
+    void copyImmediateToMemory(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u].u = src.value.u;
+    }
+
+    void copyImmediateToIndirect(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u] = _memory[getLocation(src)];
+    }
+
+    void copyImmediateToDisplaced(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u] = _memory[getDisplaced(src)];
+    }
+
+    void copyMemoryToMemory(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u] = _memory[src.value.u];
+    }
+
+    void copyMemoryToIndirect(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getLocation(dst)] = _memory[src.value.u];
+    }
+
+    void copyMemoryToDisplaced(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getDisplaced(dst)] = _memory[src.value.u];
+    }
+
+    void copyIndirectToMemory(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u] = _memory[getLocation(src)];
+    }
+
+    void copyDisplacedToMemory(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u] = _memory[getDisplaced(src)];
+    }
+
+    void copyIndirectToIndirect(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getLocation(src)] = _memory[getLocation(src)];
+    }
+
+    void copyIndirectToDisplaced(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getDisplaced(src)] = _memory[getLocation(src)];
+    }
+
+    void copyDisplacedToIndirect(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getLocation(dst)] = _memory[getDisplaced(src)];
+    }
+
+    void copyDisplacedToDisplaced(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getDisplaced(dst)] = _memory[getDisplaced(src)];
+    }
+
+    void copyDataRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.data[dst.registerIndex] = _registers.data[src.registerIndex];
+    }
+
+    void copyImmediateToDataRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.data[dst.registerIndex] = src.value.u;
+    }
+
+    void copyMemoryToDataRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.data[dst.registerIndex] = _memory[src.value.u].u;
+    }
+
+    void copyIndirectToDataRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.data[dst.registerIndex] = _memory[getLocation(src)].u;
+    }
+
+    void copyDisplacedToDataRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.data[dst.registerIndex] = _memory[getDisplaced(src)].u;
+    }
+    
+    void copyDataRegisterToMemory(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u].u = _registers.data[src.registerIndex];
+    }
+
+    void copyDataRegisterToIndirect(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getLocation(dst)].u = _registers.data[src.registerIndex];
+    }
+
+    void copyDataRegisterToDisplaced(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getDisplaced(dst)].u = _registers.data[src.registerIndex];
+    }
+
+    void copyFloatRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.floats[dst.registerIndex] = _registers.floats[src.registerIndex];
+    }
+
+    void copyImmediateToFloatRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.floats[dst.registerIndex] = src.value.f;
+    }
+
+    void copyMemoryToFloatRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.floats[dst.registerIndex] = _memory[src.value.u].f;
+    }
+
+    void copyIndirectToFloatRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.floats[dst.registerIndex] = _memory[getLocation(src)].f;
+    }
+
+    void copyDisplacedToFloatRegister(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _registers.floats[dst.registerIndex] = _memory[getDisplaced(src)].f;
+    }
+    
+    void copyFloatRegisterToMemory(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[dst.value.u].f = _registers.floats[src.registerIndex];
+    }
+
+    void copyFloatRegisterToIndirect(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getLocation(dst)].f = _registers.floats[src.registerIndex];
+    }
+
+    void copyFloatRegisterToDisplaced(VMOPCodeOperand &src, VMOPCodeOperand &dst) {
+        _memory[getDisplaced(dst)].f = _registers.floats[src.registerIndex];
+    }
+
+    VMWord &getStackTop() {
+        return _memory[(_memory.size() - 1) - _registers.rsp];
+    }
+
+    VMWord &getStackTopAndIncrement() {
+        return _memory[(_memory.size() - 1) - _registers.rsp++];
+    }
+
+    VMWord &decrementAndGetStackTop() {
+        return _memory[(_memory.size() - 1) - --_registers.rsp];
+    }
+
+    void pushImmediateToStack(VMOPCodeOperand &src) {
+        getStackTopAndIncrement() = src.value;
+    }
+
+    void pushMemoryToStack(VMOPCodeOperand &src) {
+        getStackTopAndIncrement() = _memory[src.value.u];
+    }
+
+    void pushDataRegisterToStack(VMOPCodeOperand &src) {
+        getStackTopAndIncrement().u = _registers.data[src.registerIndex]; 
+    }
+
+    void pushFloatRegisterToStack(VMOPCodeOperand &src) {
+        getStackTopAndIncrement().u = _registers.floats[src.registerIndex]; 
+    }
+
+    void pushIndirectToStack(VMOPCodeOperand &src) {
+        getStackTopAndIncrement() = _memory[getLocation(src)];
+    }
+
+    void pushDisplacedToStack(VMOPCodeOperand &src) {
+        getStackTopAndIncrement() = _memory[getDisplaced(src)];
+    }
+
+    void popStackToDataRegister(VMOPCodeOperand &dst) {
+        _registers.data[dst.registerIndex] = decrementAndGetStackTop().u;
+    }
+
+    void popStackToFloatRegister(VMOPCodeOperand &dst) {
+        _registers.floats[dst.registerIndex] = decrementAndGetStackTop().f;
+    }
+
+    void popStackToMemory(VMOPCodeOperand &dst) {
+        _memory[dst.value.u] = decrementAndGetStackTop();
+    }
+
+    void popStackToIndirect(VMOPCodeOperand &dst) {
+        _memory[getLocation(dst)] = decrementAndGetStackTop();
+    }
+
+    void popStackToDisplaced(VMOPCodeOperand &dst) {
+        _memory[getDisplaced(dst)] = decrementAndGetStackTop();
+    }
+
+    void mov(VMInstruction &inst) {
+        VMOPCodeOperand src = inst.operand1;
+        VMOPCodeOperand dst = inst.operand2;
+        switch (dst.type) {
+            case VMOPTYPE_DATA_REGISTER:
+                switch (src.type) {
+                    case VMOPTYPE_DATA_REGISTER:
+                        copyDataRegister(src, dst);
+                    break;
+                    case VMOPTYPE_IMMEDIATE:
+                        copyImmediateToDataRegister(src, dst);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        copyMemoryToDataRegister(src, dst);
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        copyIndirectToDataRegister(src, dst);
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        copyDisplacedToDataRegister(src, dst);
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_FLOAT_REGISTER:
+                switch (src.type) {
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        copyFloatRegister(src, dst);
+                    break;
+                    case VMOPTYPE_IMMEDIATE:
+                        copyImmediateToFloatRegister(src, dst);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        copyMemoryToFloatRegister(src, dst);
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        copyIndirectToFloatRegister(src, dst);
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        copyDisplacedToFloatRegister(src, dst);
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_POINTER:
+                switch (src.type) {
+                    case VMOPTYPE_DATA_REGISTER:
+                        copyDataRegisterToMemory(src, dst);
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        copyFloatRegisterToMemory(src, dst);
+                    break;
+                    case VMOPTYPE_IMMEDIATE:
+                        copyImmediateToMemory(src, dst);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        copyMemoryToMemory(src, dst);
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        copyIndirectToMemory(src, dst);
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        copyDisplacedToMemory(src, dst);
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_INDIRECT:
+                switch (src.type) {
+                    case VMOPTYPE_DATA_REGISTER:
+                        copyDataRegisterToIndirect(src, dst);
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        copyFloatRegisterToIndirect(src, dst);
+                    break;
+                    case VMOPTYPE_IMMEDIATE:
+                        copyImmediateToIndirect(src, dst);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        copyMemoryToIndirect(src, dst);
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        copyIndirectToIndirect(src, dst);
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        copyDisplacedToIndirect(src, dst);
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_DISPLACEMENT:
+                switch (src.type) {
+                    case VMOPTYPE_DATA_REGISTER:
+                        copyDataRegisterToDisplaced(src, dst);
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        copyFloatRegisterToDisplaced(src, dst);
+                    break;
+                    case VMOPTYPE_IMMEDIATE:
+                        copyImmediateToDisplaced(src, dst);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        copyMemoryToDisplaced(src, dst);
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        copyIndirectToDisplaced(src, dst);
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        copyDisplacedToDisplaced(src, dst);
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            default:
+                _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            break;
+        }
+    }
+
+    void push(VMInstruction &inst) {
+        VMOPCodeOperand src = inst.operand1;
+        switch (src.type) {
+            case VMOPTYPE_IMMEDIATE:
+                pushImmediateToStack(src);
+            break;
+            case VMOPTYPE_DATA_REGISTER:
+                pushDataRegisterToStack(src);
+            break;
+            case VMOPTYPE_FLOAT_REGISTER:
+                pushFloatRegisterToStack(src);
+            break;
+            case VMOPTYPE_POINTER:
+                pushMemoryToStack(src);
+            break;
+            case VMOPTYPE_INDIRECT:
+                pushIndirectToStack(src);
+            break;
+            case VMOPTYPE_DISPLACEMENT:
+                pushDisplacedToStack(src);
+            break;
+            default:
+                _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            break;
+        }
+    }
+
+    void pop(VMInstruction &inst) {
+        VMOPCodeOperand dst = inst.operand1;
+        switch (dst.type) {
+            case VMOPTYPE_DATA_REGISTER:
+                popStackToDataRegister(dst);
+            break;
+            case VMOPTYPE_FLOAT_REGISTER:
+                popStackToFloatRegister(dst);
+            break;
+            case VMOPTYPE_POINTER:
+                popStackToMemory(dst);
+            break;
+            case VMOPTYPE_INDIRECT:
+                popStackToIndirect(dst);
+            break;
+            case VMOPTYPE_DISPLACEMENT:
+                popStackToDisplaced(dst);
+            break;
+            default:
+                _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            break;
+        }
+    }
+
+    void add(VMInstruction &inst) {
+        VMOPCodeOperand src = inst.operand1;
+        VMOPCodeOperand dst = inst.operand2;
+        switch (dst.type) {
+            case VMOPTYPE_DATA_REGISTER:
+                switch (src.type) {
+                    case VMOPTYPE_IMMEDIATE_UNSIGNED:
+                        getDataRegister(dst) += src.value.u;
+                    break;
+                    case VMOPTYPE_DATA_REGISTER:
+                        getDataRegister(dst) += getDataRegister(src);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        getDataRegister(dst) += _memory[src.value.u].u;
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        getDataRegister(dst) += _memory[getLocation(src)].u;
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        getDataRegister(dst) += _memory[getDisplaced(src)].u;
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_SDATA_REGISTER:
+                switch(src.type) {
+                    case VMOPTYPE_IMMEDIATE_SIGNED:
+                        getSignedDataRegister(dst) += src.value.s;
+                    break;
+                    case VMOPTYPE_SDATA_REGISTER:
+                        getSignedDataRegister(dst) += getSignedDataRegister(src);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        getSignedDataRegister(dst) += _memory[src.value.u].s;
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        getSignedDataRegister(dst) += _memory[getLocation(src)].s;
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        getSignedDataRegister(dst) += _memory[getDisplaced(src)].s;
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_FLOAT_REGISTER:
+                switch (src.type) {
+                    case VMOPTYPE_IMMEDIATE_FLOAT:
+                        getFloatRegister(dst) += src.value.f;
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        getFloatRegister(dst) += getFloatRegister(src);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        getFloatRegister(dst) += _memory[src.value.u].f;
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        getFloatRegister(dst) += _memory[getLocation(src)].f;
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        getFloatRegister(dst) += _memory[getDisplaced(src)].f;
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_POINTER:
+                switch (src.type) {
+                    // TODO: maybe make this support floats and signed integers as well
+                    case VMOPTYPE_IMMEDIATE:
+                        _memory[dst.value.u].u += src.value.u;
+                    break;
+                    case VMOPTYPE_DATA_REGISTER:
+                        _memory[dst.value.u].u += getDataRegister(src);
+                    break;
+                    case VMOPTYPE_SDATA_REGISTER:
+                        _memory[dst.value.u].s += getSignedDataRegister(src);
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        _memory[dst.value.u].f += getFloatRegister(src);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        _memory[dst.value.u].u += _memory[src.value.u].u;
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        _memory[dst.value.u].u += _memory[getLocation(src)].u;
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        _memory[dst.value.u].u += _memory[getDisplaced(src)].u;
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_INDIRECT:
+                switch (src.type) {
+                    // TODO: maybe make this support floats and signed integers as well
+                    case VMOPTYPE_IMMEDIATE:
+                        _memory[getLocation(dst)].u += src.value.u;
+                    break;
+                    case VMOPTYPE_DATA_REGISTER:
+                        _memory[getLocation(dst)].u += getDataRegister(src);
+                    break;
+                    case VMOPTYPE_SDATA_REGISTER:
+                        _memory[getLocation(dst)].s += getSignedDataRegister(src);
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        _memory[getLocation(dst)].f += getFloatRegister(src);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        _memory[getLocation(dst)].u += _memory[src.value.u].u;
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        _memory[getLocation(dst)].u += _memory[getLocation(src)].u;
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        _memory[getLocation(dst)].u += _memory[getDisplaced(src)].u;
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+            case VMOPTYPE_DISPLACEMENT:
+                switch (src.type) {
+                    // TODO: maybe make this support floats and signed integers as well
+                    case VMOPTYPE_IMMEDIATE:
+                        _memory[getDisplaced(dst)].u += src.value.u;
+                    break;
+                    case VMOPTYPE_DATA_REGISTER:
+                        _memory[getDisplaced(dst)].u += getDataRegister(src);
+                    break;
+                    case VMOPTYPE_SDATA_REGISTER:
+                        _memory[getDisplaced(dst)].s += getSignedDataRegister(src);
+                    break;
+                    case VMOPTYPE_FLOAT_REGISTER:
+                        _memory[getDisplaced(dst)].f += getFloatRegister(src);
+                    break;
+                    case VMOPTYPE_POINTER:
+                        _memory[getDisplaced(dst)].u += _memory[src.value.u].u;
+                    break;
+                    case VMOPTYPE_INDIRECT:
+                        _memory[getDisplaced(dst)].u += _memory[getLocation(src)].u;
+                    break;
+                    case VMOPTYPE_DISPLACEMENT:
+                        _memory[getDisplaced(dst)].u += _memory[getDisplaced(src)].u;
+                    break;
+                    default:
+                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+                    break;
+                }
+            break;
+        }
+    }
+
+    void sub(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void mul(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void div(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void vand(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void vor(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void vxor(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void vnot(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void cmp(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jmp(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jme(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jne(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jlt(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jgt(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jle(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void jge(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void call(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void ret(VMInstruction &inst) {
+        // TODO:
+    }
+
+    void clr(VMInstruction &inst) {
+        // TODO:
+    }
+
+    VMInstruction fetch() {
+        static u8 state = 0;
+        VMInstruction inst {}; 
+        switch (state) {
+            case 0:
+                inst.opcode = VMOPCODE_MOV;
+                inst.operand1 = VMOPCodeOperand {
+                    VMOPTYPE_IMMEDIATE,
+                    0,
+                    32,
+                };
+                inst.operand2 = VMOPCodeOperand {
+                    VMOPTYPE_DATA_REGISTER,
+                    8,
+                    0,
+                };
+                state++;
+            break;
+            case 1:
+                inst.opcode = VMOPCODE_PUSH;
+                inst.operand1 = VMOPCodeOperand {
+                    VMOPTYPE_IMMEDIATE,
+                    0,
+                    32,
+                };
+                state++;
+            break;
+            case 2:
+                inst.opcode = VMOPCODE_PUSH;
+                inst.operand1 = VMOPCodeOperand {
+                    VMOPTYPE_IMMEDIATE,
+                    0,
+                    64,
+                };
+                state++;
+            break;
+            case 3:
+                inst.opcode = VMOPCODE_POP;
+                inst.operand1 = VMOPCodeOperand {
+                    VMOPTYPE_DATA_REGISTER,
+                    15,
+                };
+                state++;
+            break;
+            case 4:
+                inst.opcode = VMOPCODE_ADD;
+                inst.operand1 = VMOPCodeOperand {
+                    VMOPTYPE_IMMEDIATE_UNSIGNED,
+                    0,
+                    64,
+                };
+                inst.operand2 = VMOPCodeOperand {
+                    VMOPTYPE_DATA_REGISTER,
+                    15,
+                };
+                state++;
+            break;
+            default:
+                inst.opcode = VMOPCODE_HLT;
+            break;
+        }
+
+        _registers.rip++;
+        return inst;
     }
 };
 
 int main() {
-    f64 v = .1;
-    u64 b = *reinterpret_cast<u64 *>(&v);
-    f64 v2 = .2;
-    u64 b2 = *reinterpret_cast<u64 *>(&v2);
-    static_array<u64, 32> code {
-        VM_OP_MOV,   32, 0,
-        VM_OP_ADD,    2, 0,
-        VM_OP_DIV,    8, 0,
-        VM_OP_CALL, 0xF,
-        VM_OP_DIV,    2, 0,
-        VM_OP_HLT,
-        VM_OP_MOVF,   b, 0,
-        VM_OP_ADDF,  b2, 0,
-        VM_OP_RET,
-    };
-    static_array<u64, 1024> stack {};
-    static_array<u64, KB(8)> memory {};
-    memory_view<u64> codeView = code.view(0, code.length() - 1);
-    MetaVM<decltype(stack), decltype(memory)> vm { codeView, stack, memory };
+    using TCode = static_array<VMWord, 64>;
+    using TMemory = static_array<VMWord, KB(8)>;
+    using TExceptions = static_array<VMException, KB(1)>;
+
+    using MetaVMStatic = MetaVM<TCode, TMemory, TExceptions>;
+    TCode code {};
+    TMemory memory {};
+    TExceptions exceptions {};
+    MetaVMStatic vm { code, memory, exceptions };
+
     vm.run();
     vm.printRegisters();
+    vm.printStack();
+    vm.printExceptions();
 }
 
