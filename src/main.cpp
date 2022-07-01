@@ -56,6 +56,9 @@ using static_array = memory::static_array<T, size>;
 template<typename T>
 using memory_view = memory::memory_view<T>;
 
+template<typename T>
+using array_view = memory::array_view<T>;
+
 union VMWord {
     u8   ubytes[8];
     s8   sbytes[8];
@@ -220,14 +223,11 @@ const char *getExceptionName(VMException exception) {
     return "";
 }
 
-template<
-    typename TExceptions 
->
 struct MetaVM {
     MetaVM (
             memory_view<VMInstruction> &bytecode,
             memory_view<u8> &memory,
-            TExceptions &exceptions
+            array_view<VMException> &exceptions
     ) :      _bytecode(bytecode),
                  _memory(memory),
          _exceptions(exceptions)
@@ -335,7 +335,7 @@ private:
     VMRegisters                  _registers;
     memory_view<VMInstruction>   &_bytecode;
     memory_view<u8>                &_memory;
-    TExceptions                &_exceptions;
+    array_view<VMException>    &_exceptions;
 
     u64 getIndirect(VMOperand const &operand) const {
         return _registers.data[operand.registerIndex];
@@ -677,11 +677,12 @@ int main() {
     TExceptions exceptions {};
     auto codeView = code.view(0, code.size());
     auto memoryView = memory.view(0, memory.size());
-    MetaVM<TExceptions> vm { codeView, memoryView, exceptions };
+    auto exceptionsView = exceptions.arrayView();
+    MetaVM vm { codeView, memoryView, exceptionsView };
 
     vm.run();
     vm.printRegisters();
     vm.printExceptions();
-    vm.printMemory();
+    // vm.printMemory();
 }
 
