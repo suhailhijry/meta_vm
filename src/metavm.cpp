@@ -140,6 +140,21 @@ VMInstruction MetaVM::fetch() {
                 0,
             };
         break;
+        case 9:
+            inst.opcode = VMOPCODE_NOT;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_WORD,
+                68,
+                0,
+            };
+            inst.operand3 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_WORD,
+                68,
+                0,
+            };
+        break;
         default:
             inst.opcode = VMOPCODE_HLT;
         break;
@@ -223,6 +238,42 @@ void MetaVM::run() {
             break;
             case VMOPCODE_DIVFS:
                 divfs(inst);
+            break;
+            case VMOPCODE_NEG:
+                neg(inst);
+            break;
+            case VMOPCODE_AND:
+                bitwise_and(inst);
+            break;
+            case VMOPCODE_OR:
+                bitwise_or(inst);
+            break;
+            case VMOPCODE_XOR:
+                bitwise_xor(inst);
+            break;
+            case VMOPCODE_NOT:
+                bitwise_not(inst);
+            break;
+            case VMOPCODE_JMP:
+                jmp(inst);
+            break;
+            case VMOPCODE_JEQ:
+                jeq(inst);
+            break;
+            case VMOPCODE_JNE:
+                jne(inst);
+            break;
+            case VMOPCODE_JGT:
+                jgt(inst);
+            break;
+            case VMOPCODE_JLT:
+                jlt(inst);
+            break;
+            case VMOPCODE_JGE:
+                jge(inst);
+            break;
+            case VMOPCODE_JLE:
+                jle(inst);
             break;
         }
     }

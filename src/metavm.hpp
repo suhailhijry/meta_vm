@@ -58,6 +58,18 @@ private:
     void subfs(VMInstruction &inst);
     void mulfs(VMInstruction &inst);
     void divfs(VMInstruction &inst);
+    void neg(VMInstruction &inst);
+    void bitwise_and(VMInstruction &inst);
+    void bitwise_or(VMInstruction &inst);
+    void bitwise_xor(VMInstruction &inst);
+    void bitwise_not(VMInstruction &inst);
+    void jmp(VMInstruction &inst);
+    void jeq(VMInstruction &inst);
+    void jne(VMInstruction &inst);
+    void jgt(VMInstruction &inst);
+    void jlt(VMInstruction &inst);
+    void jge(VMInstruction &inst);
+    void jle(VMInstruction &inst);
 
     VMInstruction fetch();
 };

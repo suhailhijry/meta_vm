@@ -2,6 +2,8 @@
 #include "types.hpp"
 #include "metavm.hpp"
 
+// NOTE: many opcodes implementations can be reduced to a macro, but I don't have the time to it, so copy pasting for now :)
+
 void MetaVM::mov(VMInstruction &inst) {
     VMOperand src = inst.operand1;
     VMOperand dst = inst.operand2;
@@ -616,5 +618,302 @@ void MetaVM::divfs(VMInstruction &inst) {
     VMWord &rhsWord = getVMWord(rhs);
 
     dstWord.fsingles[0] = lhsWord.fsingles[0] / rhsWord.fsingles[0];
+}
+
+void MetaVM::neg(VMInstruction &inst) {
+    VMOperand src = inst.operand1;
+    VMOperand dst = inst.operand1;
+    
+    if (dst.size < src.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &srcWord = getVMWord(src);
+    VMWord &dstWord = getVMWord(dst);
+
+    switch (dst.size) {
+        case VMOPSIZE_QWORD: {
+            s64 value = getSigned(src.size, srcWord);
+            dstWord.s = -value;
+        } break;
+        case VMOPSIZE_DWORD: {
+            s32 value = getSigned(src.size, srcWord);
+            dstWord.sdwords[0] = -value;
+        } break;
+        case VMOPSIZE_WORD: {
+            s16 value = getSigned(src.size, srcWord);
+            dstWord.swords[0] = -value;
+        } break;
+        default: {
+            s8 value = getSigned(src.size, srcWord);
+            dstWord.sbytes[0] = -value;
+        } break;
+    }
+}
+
+void MetaVM::bitwise_and(VMInstruction &inst) {
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    VMOperand dst = inst.operand1;
+    
+    if (dst.size < lhs.size || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_QWORD: {
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.u = lhsValue & rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.udwords[0] = lhsValue & rhsValue;
+        } break;
+        case VMOPSIZE_WORD: {
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.uwords[0] = lhsValue & rhsValue;
+        } break;
+        default: {
+            u8 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u8 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.ubytes[0] = lhsValue & rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::bitwise_or(VMInstruction &inst) {
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    VMOperand dst = inst.operand1;
+    
+    if (dst.size < lhs.size || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_QWORD: {
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.u = lhsValue | rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.udwords[0] = lhsValue | rhsValue;
+        } break;
+        case VMOPSIZE_WORD: {
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.uwords[0] = lhsValue | rhsValue;
+        } break;
+        default: {
+            u8 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u8 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.ubytes[0] = lhsValue | rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::bitwise_xor(VMInstruction &inst) {
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    VMOperand dst = inst.operand1;
+    
+    if (dst.size < lhs.size || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_QWORD: {
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.u = lhsValue ^ rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.udwords[0] = lhsValue ^ rhsValue;
+        } break;
+        case VMOPSIZE_WORD: {
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.uwords[0] = lhsValue ^ rhsValue;
+        } break;
+        default: {
+            u8 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u8 rhsValue = getUnsigned(rhs.size, rhsWord);
+            dstWord.ubytes[0] = lhsValue ^ rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::bitwise_not(VMInstruction &inst) {
+    VMOperand src = inst.operand1;
+    VMOperand dst = inst.operand1;
+    
+    if (dst.size < src.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &srcWord = getVMWord(src);
+    VMWord &dstWord = getVMWord(dst);
+
+    switch (dst.size) {
+        case VMOPSIZE_QWORD: {
+            u64 value = getUnsigned(src.size, srcWord);
+            dstWord.u = ~value;
+        } break;
+        case VMOPSIZE_DWORD: {
+            u32 value = getSigned(src.size, srcWord);
+            dstWord.udwords[0] = ~value;
+        } break;
+        case VMOPSIZE_WORD: {
+            u16 value = getSigned(src.size, srcWord);
+            dstWord.uwords[0] = ~value;
+        } break;
+        default: {
+            u8 value = getSigned(src.size, srcWord);
+            dstWord.ubytes[0] = ~value;
+        } break;
+    }
+}
+
+void MetaVM::jmp(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    
+    if (dst.value.u >= _bytecode.size()) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    _registers.instructionPointer = dst.value.u;
+}
+
+void MetaVM::jeq(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    
+    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    if (getUnsigned(lhs.size, lhsWord) != getUnsigned(rhs.size, rhsWord)) return;
+
+    _registers.instructionPointer = dst.value.u;
+}
+
+void MetaVM::jne(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    
+    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    if (getUnsigned(lhs.size, lhsWord) == getUnsigned(rhs.size, rhsWord)) return;
+
+    _registers.instructionPointer = dst.value.u;
+}
+
+void MetaVM::jgt(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    
+    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    if (!(getUnsigned(lhs.size, lhsWord) > getUnsigned(rhs.size, rhsWord))) return;
+
+    _registers.instructionPointer = dst.value.u;
+}
+
+void MetaVM::jlt(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    
+    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    if (!(getUnsigned(lhs.size, lhsWord) < getUnsigned(rhs.size, rhsWord))) return;
+
+    _registers.instructionPointer = dst.value.u;
+}
+
+void MetaVM::jge(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    
+    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    if (!(getUnsigned(lhs.size, lhsWord) >= getUnsigned(rhs.size, rhsWord))) return;
+
+    _registers.instructionPointer = dst.value.u;
+}
+
+void MetaVM::jle(VMInstruction &inst) {
+    VMOperand dst = inst.operand1;
+    VMOperand lhs = inst.operand2;
+    VMOperand rhs = inst.operand3;
+    
+    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    if (!(getUnsigned(lhs.size, lhsWord) <= getUnsigned(rhs.size, rhsWord))) return;
+
+    _registers.instructionPointer = dst.value.u;
 }
 
