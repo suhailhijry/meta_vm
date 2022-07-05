@@ -917,3 +917,49 @@ void MetaVM::jle(VMInstruction &inst) {
     _registers.instructionPointer = dst.value.u;
 }
 
+void MetaVM::call(VMInstruction &inst) {
+    VMOperand address = inst.operand1;
+
+    VMWord &addressWord = getVMWord(address);
+    VMOperandSize addressSize = address.size;
+
+    u64 value = getUnsigned(addressSize, addressWord);
+    if (value >= _bytecode.length()) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    u8 size = VMOPSIZE_QWORD; 
+
+    // make sure there's enough room for (at least) the instruction pointer
+    if (_registers.stackPointer - size >= _memory.size()) {
+        _exceptions.append(VMEXCEPT_STACK_OVERFLOW);
+        return;
+    }
+
+    // push the current instruction pointer to the stack
+    _registers.stackPointer -= size;
+    VMWord &stackTop = getStackTop();
+    stackTop.u = _registers.instructionPointer;
+
+    // make the next instruction the called code
+    _registers.instructionPointer = value;
+}
+
+void MetaVM::ret(VMInstruction &) {
+    VMWord &stackTop = getStackTop();
+
+    // make sure the stack top is a sane address
+    if (stackTop.u >= _bytecode.length()) {
+        _exceptions.append(VMEXCEPT_UNEXPECTED_OPCODE);
+        return;
+    }
+
+    // take the top of the stack
+    u8 size = VMOPSIZE_QWORD;
+    _registers.stackPointer += size;
+
+    // get save it back to the register
+    _registers.instructionPointer = stackTop.u;
+}
+

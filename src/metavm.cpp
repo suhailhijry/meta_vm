@@ -155,6 +155,36 @@ VMInstruction MetaVM::fetch() {
                 0,
             };
         break;
+        case 10:
+            inst.opcode = VMOPCODE_CALL;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_IMMEDIATE,
+                VMOPSIZE_BYTE,
+                0,
+                12,
+            };
+        break;
+        case 11:
+            inst.opcode = VMOPCODE_HLT;
+        break;
+        case 12:
+            inst.opcode = VMOPCODE_MOV;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_IMMEDIATE,
+                VMOPSIZE_BYTE,
+                0,
+                128,
+            };
+            inst.operand2 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_QWORD,
+                24,
+                0,
+            };
+        break;
+        case 13:
+            inst.opcode = VMOPCODE_RET;
+        break;
         default:
             inst.opcode = VMOPCODE_HLT;
         break;
@@ -275,6 +305,12 @@ void MetaVM::run() {
             case VMOPCODE_JLE:
                 jle(inst);
             break;
+            case VMOPCODE_CALL:
+                call(inst);
+            break;
+            case VMOPCODE_RET:
+                ret(inst);
+            break;
         }
     }
 }
@@ -282,10 +318,7 @@ void MetaVM::run() {
 void MetaVM::printRegisters() {
     std::printf("REGISTERS:\n");
     std::printf("IP: %#018llx ", _registers.instructionPointer);
-    std::printf("SP: %#018llx ", _registers.stackPointer);
-    std::printf("FP: %#018llx ", _registers.framePointer);
-    std::printf("LP: %#018llx\n", _registers.linkPointer);
-    std::printf("FLAGS: %#02x\n", _registers.flags);
+    std::printf("SP: %#018llx\n", _registers.stackPointer);
     std::printf("DATA:\n");
     for (u8 i = 0; i < REGISTER_COUNT; ++i) {
         if (i != 0 && i % 8 == 0) {

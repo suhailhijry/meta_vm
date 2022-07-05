@@ -70,6 +70,8 @@ private:
     void jlt(VMInstruction &inst);
     void jge(VMInstruction &inst);
     void jle(VMInstruction &inst);
+    void call(VMInstruction &inst);
+    void ret(VMInstruction &inst);
 
     VMInstruction fetch();
 };

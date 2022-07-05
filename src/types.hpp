@@ -121,6 +121,9 @@ enum VMOPCode {
 
     // other
     VMOPCODE_JMP,       VMOPCODE_JEQ,      VMOPCODE_JNE,      VMOPCODE_JGT,      VMOPCODE_JLT,    VMOPCODE_JGE,    VMOPCODE_JLE,
+
+    // procedures (functions)
+    VMOPCODE_CALL,      VMOPCODE_RET
 };
 
 struct VMInstruction {
@@ -133,20 +136,9 @@ struct VMInstruction {
 // 32 registers is more than enough for most operations
 constexpr u64 REGISTER_COUNT = 32;
 
-enum VMOPFlags {
-    VMOPFLAGS_CARRY      = 0x01,
-    VMOPFLAGS_ZERO       = 0x02,
-    VMOPFLAGS_SIGN       = 0x04,
-    VMOPFLAGS_OVERFLOW   = 0x08,
-    VMOPFLAGS_UNDERFLOW  = 0x10,
-};
-
 struct VMRegisters {
     u64 instructionPointer;
     u64 stackPointer;       
-    u64 framePointer;       
-    u64 linkPointer;       
-    u8  flags;
 
     // general purpose registers
     // can also be used as floating point registers
@@ -154,6 +146,7 @@ struct VMRegisters {
 };
 
 enum VMException {
+    VMEXCEPT_UNEXPECTED_OPCODE,
     VMEXCEPT_INVALID_OPERANDS,
     VMEXCEPT_STACK_OVERFLOW,
     VMEXCEPT_STACK_UNDERFLOW,
@@ -165,6 +158,7 @@ inline const char *getExceptionName(VMException exception) {
     #define exname(e) case e: return #e
 
     switch (exception) {
+        exname(VMEXCEPT_UNEXPECTED_OPCODE);
         exname(VMEXCEPT_INVALID_OPERANDS);
         exname(VMEXCEPT_STACK_OVERFLOW);
         exname(VMEXCEPT_STACK_UNDERFLOW);
