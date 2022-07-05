@@ -1,23 +1,24 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utils/math.hpp>
 #include <utils/assert.hpp>
 #include <utils/memory.hpp>
-#include <backward_cpp/backward.hpp>
+// #include <backward_cpp/backward.hpp>
 
-using namespace backward;
+// using namespace backward;
 using namespace achilles;
 
-void print_trace(void) {
-    StackTrace st;
-    st.load_here(32);
-    Printer p;
-    p.print(st);
-}
+// void print_trace(void) {
+//     StackTrace st;
+//     st.load_here(32);
+//     Printer p;
+//     p.print(st);
+// }
 
 bool aassert_handler(const char *conditionCode, const char *report) {
     std::printf("assertion %s failed, %s \n", conditionCode, report);
-    print_trace();
+    // print_trace();
     return true;
 }
 
@@ -58,6 +59,23 @@ using memory_view = memory::memory_view<T>;
 
 template<typename T>
 using array_view = memory::array_view<T>;
+
+enum VMOperandType {
+    VMOPTYPE_REGISTER,
+    VMOPTYPE_IMMEDIATE,
+    VMOPTYPE_POINTER,
+
+    // NOTE: cannot be used on float registers
+    VMOPTYPE_INDIRECT, 
+    VMOPTYPE_DISPLACEMENT,
+};
+
+enum VMOperandSize : u8 {
+    VMOPSIZE_BYTE  = sizeof(u8),
+    VMOPSIZE_WORD  = sizeof(u16),
+    VMOPSIZE_DWORD = sizeof(u32),
+    VMOPSIZE_QWORD = sizeof(u64),
+};
 
 union VMWord {
     u8   ubytes[8];
@@ -132,23 +150,6 @@ union VMWord {
     }
 };
 
-enum VMOperandType {
-    VMOPTYPE_REGISTER,
-    VMOPTYPE_IMMEDIATE,
-    VMOPTYPE_POINTER,
-
-    // NOTE: cannot be used on float registers
-    VMOPTYPE_INDIRECT, 
-    VMOPTYPE_DISPLACEMENT,
-};
-
-enum VMOperandSize : u8 {
-    VMOPSIZE_BYTE  = sizeof(u8),
-    VMOPSIZE_WORD  = sizeof(u16),
-    VMOPSIZE_DWORD = sizeof(u32),
-    VMOPSIZE_QWORD = sizeof(u64),
-};
-
 struct VMOperand {
     VMOperandType          type;
     VMOperandSize          size;
@@ -166,6 +167,9 @@ enum VMOPCode {
     
     // stack push
     VMOPCODE_PUSH,      VMOPCODE_POP,
+
+    // arithmetics
+    VMOPCODE_ADD,       VMOPCODE_SUB,   VMOPCODE_MUL,    VMOPCODE_DIV,
 };
 
 
@@ -256,6 +260,18 @@ struct MetaVM {
                 case VMOPCODE_POP:
                     pop(inst);
                 break;
+                case VMOPCODE_ADD:
+                    add(inst);
+                break;
+                case VMOPCODE_SUB:
+                    sub(inst);
+                break;
+                case VMOPCODE_MUL:
+                    mul(inst);
+                break;
+                case VMOPCODE_DIV:
+                    div(inst);
+                break;
             }
         }
     }
@@ -283,7 +299,7 @@ struct MetaVM {
 
     void printMemory() {
         std::printf("MEMORY:\n");
-        u64 zeroesCount = 0;
+        // u64 zeroesCount = 0;
         for (u64 i = 0; i < _memory.length(); ++i) {
             if (i != 0 && i % 8 == 0) {
                 std::printf("\n");
@@ -332,7 +348,7 @@ struct MetaVM {
         printExceptions();
     }
 private:
-    VMRegisters                  _registers;
+    VMRegisters                  _registers {};
     memory_view<VMInstruction>   &_bytecode;
     memory_view<u8>                &_memory;
     array_view<VMException>    &_exceptions;
@@ -346,18 +362,38 @@ private:
     }
 
     VMWord &getRegister(VMOperand const &operand) {
-        return _registers.data[operand.registerIndex];
+        u8 index = operand.registerIndex;
+        switch (operand.size) {
+            case VMOPSIZE_QWORD:
+                return _registers.data[index];
+            case VMOPSIZE_DWORD: {
+                index = (u8) ((index / (REGISTER_COUNT * 2.0f)) * REGISTER_COUNT);
+                VMWord &actualRegister = _registers.data[index];
+                return *reinterpret_cast<VMWord *>(&actualRegister.udwords[operand.registerIndex % 2]);
+            } break;
+            case VMOPSIZE_WORD: {
+                index = (u8) ((index / (REGISTER_COUNT * 4.0f)) * REGISTER_COUNT);
+                printf("Word register index: %u\n", index);
+                VMWord &actualRegister = _registers.data[index];
+                return *reinterpret_cast<VMWord *>(&actualRegister.uwords[operand.registerIndex % 4]);
+            } break;
+            default: {
+                index = (u8) ((index / (REGISTER_COUNT * 8.0f)) * REGISTER_COUNT);
+                VMWord &actualRegister = _registers.data[index];
+                return *reinterpret_cast<VMWord *>(&actualRegister.ubytes[operand.registerIndex % 8]);
+            } break;
+        }
     }
 
-    VMWord &getMemoryFromPointer(VMOperand const &operand) const {
+    VMWord &getMemoryFromPointer(VMOperand const &operand) {
         return *reinterpret_cast<VMWord *>(&_memory[operand.value.u]);
     }
 
-    VMWord &getMemoryFromIndirect(VMOperand const &operand) const {
+    VMWord &getMemoryFromIndirect(VMOperand const &operand) {
         return *reinterpret_cast<VMWord *>(&_memory[getIndirect(operand)]);
     }
 
-    VMWord &getMemoryFromDisplaced(VMOperand const &operand) const {
+    VMWord &getMemoryFromDisplaced(VMOperand const &operand) {
         return *reinterpret_cast<VMWord *>(&_memory[getDisplaced(operand)]);
     }
 
@@ -365,167 +401,31 @@ private:
         return *reinterpret_cast<VMWord *>(&_memory[_registers.stackPointer]);
     }
 
+    VMWord &getVMWord(VMOperand &operand) {
+        switch (operand.type) {
+            case VMOPTYPE_REGISTER:     return getRegister(operand);
+            case VMOPTYPE_POINTER:      return getMemoryFromPointer(operand);
+            case VMOPTYPE_INDIRECT:     return getMemoryFromIndirect(operand);
+            case VMOPTYPE_DISPLACEMENT: return getMemoryFromDisplaced(operand);
+            default:                    return operand.value;
+        }
+    }
+
     void mov(VMInstruction &inst) {
         VMOperand src = inst.operand1;
         VMOperand dst = inst.operand2;
         u8 size = src.size;
         u8 dstSize = dst.size;
-        if (dstSize < size) {
+        if (dstSize < size || dst.type == VMOPTYPE_IMMEDIATE) {
             _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
             return;
         }
-        switch (dst.type) {
-            case VMOPTYPE_REGISTER: {
-                VMWord &dstRegister = getRegister(dst);
-                switch (src.type) {
-                    case VMOPTYPE_IMMEDIATE: {
-                        for (u8 i = 0; i < size; ++i) {
-                            dstRegister.ubytes[i] = src.value.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_REGISTER: {
-                        VMWord &srcRegister = getRegister(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstRegister.ubytes[i] = srcRegister.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_POINTER: {
-                        VMWord &srcMemory = getMemoryFromPointer(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstRegister.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_INDIRECT: {
-                        VMWord &srcMemory = getMemoryFromIndirect(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstRegister.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_DISPLACEMENT: {
-                        VMWord &srcMemory = getMemoryFromDisplaced(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstRegister.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    default: {
-                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
-                    } break;
-                }
-            } break;
-            case VMOPTYPE_POINTER: {
-                VMWord &dstMemory = getMemoryFromPointer(dst);
-                switch (src.type) {
-                    case VMOPTYPE_IMMEDIATE: {
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = src.value.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_REGISTER: {
-                        VMWord &srcRegister = getRegister(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcRegister.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_POINTER: {
-                        VMWord &srcMemory = getMemoryFromPointer(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_INDIRECT: {
-                        VMWord &srcMemory = getMemoryFromIndirect(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_DISPLACEMENT: {
-                        VMWord &srcMemory = getMemoryFromDisplaced(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    default: {
-                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
-                    } break;
-                }
-            } break;
-            case VMOPTYPE_INDIRECT: {
-                VMWord &dstMemory = getMemoryFromIndirect(dst);
-                switch (src.type) {
-                    case VMOPTYPE_IMMEDIATE: {
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = src.value.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_REGISTER: {
-                        VMWord &srcRegister = getRegister(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcRegister.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_POINTER: {
-                        VMWord &srcMemory = getMemoryFromPointer(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_INDIRECT: {
-                        VMWord &srcMemory = getMemoryFromIndirect(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_DISPLACEMENT: {
-                        VMWord &srcMemory = getMemoryFromDisplaced(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    default: {
-                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
-                    } break;
-                }
-            } break;
-            case VMOPTYPE_DISPLACEMENT: {
-                VMWord &dstMemory = getMemoryFromDisplaced(dst);
-                switch (src.type) {
-                    case VMOPTYPE_IMMEDIATE: {
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = src.value.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_REGISTER: {
-                        VMWord &srcRegister = getRegister(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcRegister.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_POINTER: {
-                        VMWord &srcMemory = getMemoryFromPointer(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_INDIRECT: {
-                        VMWord &srcMemory = getMemoryFromIndirect(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    case VMOPTYPE_DISPLACEMENT: {
-                        VMWord &srcMemory = getMemoryFromDisplaced(src);
-                        for (u8 i = 0; i < size; ++i) {
-                            dstMemory.ubytes[i] = srcMemory.ubytes[i];
-                        }
-                    } break;
-                    default: {
-                        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
-                    } break;
-                }
-            } break;
-            default: {
-                _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
-            } break;
+
+        VMWord &dstWord = getVMWord(dst);
+        VMWord &srcWord = getVMWord(src);
+
+        for (u8 i = 0; i < size; ++i) {
+            dstWord.ubytes[i] = srcWord.ubytes[i];
         }
     }
 
@@ -538,39 +438,10 @@ private:
         }
         _registers.stackPointer -= size;
         VMWord &stackTop = getStackTop();
-        switch (src.type) {
-            case VMOPTYPE_IMMEDIATE: {
-                for (u8 i = 0; i < size; ++i) {
-                    stackTop.ubytes[i] = src.value.ubytes[i];
-                }
-            } break;
-            case VMOPTYPE_REGISTER: {
-                VMWord &srcRegister = getRegister(src);
-                for (u8 i = 0; i < size; ++i) {
-                    stackTop.ubytes[i] = srcRegister.ubytes[i];
-                }
-            } break;
-            case VMOPTYPE_POINTER: {
-                VMWord &srcMemory = getMemoryFromPointer(src);
-                for (u8 i = 0; i < size; ++i) {
-                    stackTop.ubytes[i] = srcMemory.ubytes[i];
-                }
-            } break;
-            case VMOPTYPE_INDIRECT: {
-                VMWord &srcMemory = getMemoryFromIndirect(src);
-                for (u8 i = 0; i < size; ++i) {
-                    stackTop.ubytes[i] = srcMemory.ubytes[i];
-                }
-            } break;
-            case VMOPTYPE_DISPLACEMENT: {
-                VMWord &srcMemory = getMemoryFromDisplaced(src);
-                for (u8 i = 0; i < size; ++i) {
-                    stackTop.ubytes[i] = srcMemory.ubytes[i];
-                }
-            } break;
-            default: {
-                _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
-            } break;
+        VMWord &srcVMWord = getVMWord(src);
+
+        for (u8 i = 0; i < size; ++i) {
+            stackTop.ubytes[i] = srcVMWord.ubytes[i];
         }
     }
 
@@ -583,33 +454,505 @@ private:
         }
         VMWord &stackTop = getStackTop();
         _registers.stackPointer += size;
-        switch (dst.type) {
-            case VMOPTYPE_REGISTER: {
-                VMWord &dstRegister = getRegister(dst);
-                for (u8 i = 0; i < size; ++i) {
-                    dstRegister.ubytes[i] = stackTop.ubytes[i];
-                }
+        VMWord &dstVMWord = getVMWord(dst);
+
+        for (u8 i = 0; i < size; ++i) {
+            dstVMWord.ubytes[i] = stackTop.ubytes[i];
+        }
+    }
+
+    void add(VMInstruction &inst) {
+        VMOperand lhs = inst.operand1;
+        VMOperand rhs = inst.operand2;
+        VMOperand dst = inst.operand3;
+
+        if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+            _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            return;
+        }
+
+        VMWord &dstWord = getVMWord(dst);
+        VMWord &lhsWord = getVMWord(lhs);
+        VMWord &rhsWord = getVMWord(rhs);
+
+        switch (dst.size) {
+            case VMOPSIZE_BYTE: {
+                // lhs and rhs are guaranteed to be 1 byte long
+                dstWord.ubytes[0] = lhsWord.ubytes[0] + rhsWord.ubytes[0];
             } break;
-            case VMOPTYPE_POINTER: {
-                VMWord &dstMemory = getMemoryFromPointer(dst);
-                for (u8 i = 0; i < size; ++i) {
-                    dstMemory.ubytes[i] = stackTop.ubytes[i];
+            case VMOPSIZE_WORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 word long
+                u16 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
                 }
-            } break;
-            case VMOPTYPE_INDIRECT: {
-                VMWord &dstMemory = getMemoryFromIndirect(dst);
-                for (u8 i = 0; i < size; ++i) {
-                    dstMemory.ubytes[i] = stackTop.ubytes[i];
+
+                u16 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
                 }
+
+                dstWord.uwords[0] = lhsValue + rhsValue;
             } break;
-            case VMOPTYPE_DISPLACEMENT: {
-                VMWord &dstMemory = getMemoryFromDisplaced(dst);
-                for (u8 i = 0; i < size; ++i) {
-                    dstMemory.ubytes[i] = stackTop.ubytes[i];
+            case VMOPSIZE_DWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 dword long
+                u32 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
                 }
+
+                u32 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.udwords[0] = lhsValue + rhsValue;
             } break;
-            default: {
-                _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            case VMOPSIZE_QWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 qword long
+                u64 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_QWORD:
+                        lhsValue = lhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u64 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_QWORD:
+                        rhsValue = rhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.u = lhsValue + rhsValue;
+            } break;
+        }
+    }
+
+    void sub(VMInstruction &inst) {
+        VMOperand lhs = inst.operand1;
+        VMOperand rhs = inst.operand2;
+        VMOperand dst = inst.operand3;
+
+        if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+            _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            return;
+        }
+
+        VMWord &dstWord = getVMWord(dst);
+        VMWord &lhsWord = getVMWord(lhs);
+        VMWord &rhsWord = getVMWord(rhs);
+
+        switch (dst.size) {
+            case VMOPSIZE_BYTE: {
+                // lhs and rhs are guaranteed to be 1 byte long
+                dstWord.ubytes[0] = lhsWord.ubytes[0] - rhsWord.ubytes[0];
+            } break;
+            case VMOPSIZE_WORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 word long
+                u16 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u16 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.uwords[0] = lhsValue - rhsValue;
+            } break;
+            case VMOPSIZE_DWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 dword long
+                u32 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u32 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.udwords[0] = lhsValue - rhsValue;
+            } break;
+            case VMOPSIZE_QWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 qword long
+                u64 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_QWORD:
+                        lhsValue = lhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u64 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_QWORD:
+                        rhsValue = rhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.u = lhsValue - rhsValue;
+            } break;
+        }
+    }
+
+    void mul(VMInstruction &inst) {
+        VMOperand lhs = inst.operand1;
+        VMOperand rhs = inst.operand2;
+        VMOperand dst = inst.operand3;
+
+        if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+            _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            return;
+        }
+
+        VMWord &dstWord = getVMWord(dst);
+        VMWord &lhsWord = getVMWord(lhs);
+        VMWord &rhsWord = getVMWord(rhs);
+
+        switch (dst.size) {
+            case VMOPSIZE_BYTE: {
+                // lhs and rhs are guaranteed to be 1 byte long
+                dstWord.ubytes[0] = lhsWord.ubytes[0] * rhsWord.ubytes[0];
+            } break;
+            case VMOPSIZE_WORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 word long
+                u16 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u16 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.uwords[0] = lhsValue * rhsValue;
+            } break;
+            case VMOPSIZE_DWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 dword long
+                u32 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u32 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.udwords[0] = lhsValue * rhsValue;
+            } break;
+            case VMOPSIZE_QWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 qword long
+                u64 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_QWORD:
+                        lhsValue = lhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u64 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_QWORD:
+                        rhsValue = rhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.u = lhsValue * rhsValue;
+            } break;
+        }
+    }
+
+    void div(VMInstruction &inst) {
+        VMOperand lhs = inst.operand1;
+        VMOperand rhs = inst.operand2;
+        VMOperand dst = inst.operand3;
+
+        if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+            _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+            return;
+        }
+
+        VMWord &dstWord = getVMWord(dst);
+        VMWord &lhsWord = getVMWord(lhs);
+        VMWord &rhsWord = getVMWord(rhs);
+
+        switch (dst.size) {
+            case VMOPSIZE_BYTE: {
+                // lhs and rhs are guaranteed to be 1 byte long
+                dstWord.ubytes[0] = lhsWord.ubytes[0] / rhsWord.ubytes[0];
+            } break;
+            case VMOPSIZE_WORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 word long
+                u16 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u16 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.uwords[0] = lhsValue / rhsValue;
+            } break;
+            case VMOPSIZE_DWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 dword long
+                u32 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u32 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.udwords[0] = lhsValue / rhsValue;
+            } break;
+            case VMOPSIZE_QWORD: {
+                // lhs and rhs can at least be 1 byte long and at most 1 qword long
+                u64 lhsValue = 0;
+                switch (lhs.size) {
+                    case VMOPSIZE_QWORD:
+                        lhsValue = lhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        lhsValue = lhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        lhsValue = lhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        lhsValue = lhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                u64 rhsValue = 0;
+                switch (rhs.size) {
+                    case VMOPSIZE_QWORD:
+                        rhsValue = rhsWord.u;
+                    break;
+                    case VMOPSIZE_DWORD:
+                        rhsValue = rhsWord.udwords[0];
+                    break;
+                    case VMOPSIZE_WORD:
+                        rhsValue = rhsWord.uwords[0];
+                    break;
+                    case VMOPSIZE_BYTE:
+                        rhsValue = rhsWord.ubytes[0];
+                    break;
+                    // NOTE: unreachable
+                    default: return;
+                }
+
+                dstWord.u = lhsValue / rhsValue;
             } break;
         }
     }
@@ -629,6 +972,7 @@ private:
                     VMOPTYPE_REGISTER,
                     VMOPSIZE_QWORD,
                     8,
+                    0,
                 };
             break;
             case 1:
@@ -644,7 +988,7 @@ private:
                 inst.opcode = VMOPCODE_PUSH;
                 inst.operand1 = VMOperand {
                     VMOPTYPE_IMMEDIATE,
-                    VMOPSIZE_QWORD,
+                    VMOPSIZE_BYTE,
                     0,
                     64,
                 };
@@ -653,8 +997,30 @@ private:
                 inst.opcode = VMOPCODE_POP;
                 inst.operand1 = VMOperand {
                     VMOPTYPE_REGISTER,
+                    VMOPSIZE_BYTE,
+                    2,
+                    0,
+                };
+            break;
+            case 4:
+                inst.opcode = VMOPCODE_MUL;
+                inst.operand1 = VMOperand {
+                    VMOPTYPE_REGISTER,
+                    VMOPSIZE_BYTE,
+                    2,
+                    0,
+                };
+                inst.operand2 = VMOperand {
+                    VMOPTYPE_IMMEDIATE,
+                    VMOPSIZE_BYTE,
+                    0,
+                    64,
+                };
+                inst.operand3 = VMOperand {
+                    VMOPTYPE_REGISTER,
                     VMOPSIZE_QWORD,
-                    15,
+                    17,
+                    0,
                 };
             break;
             default:
@@ -668,8 +1034,12 @@ private:
 };
 
 int main() {
+    u8 index = (u8) (1ULL / (REGISTER_COUNT * 8)) * REGISTER_COUNT;
+    u8 subIndex = (u8) (1ULL % 8ULL);
+    printf("index: %u", index);
+    printf("subIndex: %u", subIndex);
     using TCode = static_array<VMInstruction, 64>;
-    using TMemory = static_array<u8, KB(8)>;
+    using TMemory = static_array<u8, KB(1)>;
     using TExceptions = static_array<VMException, KB(1)>;
 
     TCode code {};
@@ -683,6 +1053,6 @@ int main() {
     vm.run();
     vm.printRegisters();
     vm.printExceptions();
-    // vm.printMemory();
+    vm.printMemory();
 }
 
