@@ -68,6 +68,78 @@ VMInstruction MetaVM::fetch() {
                 0,
             };
         break;
+        case 5:
+            inst.opcode = VMOPCODE_MOV;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_IMMEDIATE,
+                VMOPSIZE_BYTE,
+                0,
+                -32,
+            };
+            inst.operand2 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_BYTE,
+                255,
+                0,
+            };
+        break;
+        case 6:
+            inst.opcode = VMOPCODE_DIVS;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_BYTE,
+                255,
+                0,
+            };
+            inst.operand2 = VMOperand {
+                VMOPTYPE_IMMEDIATE,
+                VMOPSIZE_BYTE,
+                0,
+                2,
+            };
+            inst.operand3 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_BYTE,
+                24,
+                0,
+            };
+        break;
+        case 7:
+            inst.opcode = VMOPCODE_MOV;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_IMMEDIATE,
+                VMOPSIZE_DWORD,
+                0,
+                32.0f,
+            };
+            inst.operand2 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_DWORD,
+                46,
+                0,
+            };
+        break;
+        case 8:
+            inst.opcode = VMOPCODE_ADDFS;
+            inst.operand1 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_DWORD,
+                46,
+                0,
+            };
+            inst.operand2 = VMOperand {
+                VMOPTYPE_IMMEDIATE,
+                VMOPSIZE_DWORD,
+                0,
+                0.32f,
+            };
+            inst.operand3 = VMOperand {
+                VMOPTYPE_REGISTER,
+                VMOPSIZE_DWORD,
+                46,
+                0,
+            };
+        break;
         default:
             inst.opcode = VMOPCODE_HLT;
         break;
@@ -109,6 +181,48 @@ void MetaVM::run() {
             break;
             case VMOPCODE_DIV:
                 div(inst);
+            break;
+            case VMOPCODE_DIVR:
+                divr(inst);
+            break;
+            case VMOPCODE_ADDS:
+                adds(inst);
+            break;
+            case VMOPCODE_SUBS:
+                subs(inst);
+            break;
+            case VMOPCODE_MULS:
+                muls(inst);
+            break;
+            case VMOPCODE_DIVS:
+                divs(inst);
+            break;
+            case VMOPCODE_DIVSR:
+                divsr(inst);
+            break;
+            case VMOPCODE_ADDF:
+                addf(inst);
+            break;
+            case VMOPCODE_SUBF:
+                subf(inst);
+            break;
+            case VMOPCODE_MULF:
+                mulf(inst);
+            break;
+            case VMOPCODE_DIVF:
+                divf(inst);
+            break;
+            case VMOPCODE_ADDFS:
+                addfs(inst);
+            break;
+            case VMOPCODE_SUBFS:
+                subfs(inst);
+            break;
+            case VMOPCODE_MULFS:
+                mulfs(inst);
+            break;
+            case VMOPCODE_DIVFS:
+                divfs(inst);
             break;
         }
     }

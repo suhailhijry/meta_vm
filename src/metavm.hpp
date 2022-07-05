@@ -44,6 +44,20 @@ private:
     void sub(VMInstruction &inst);
     void mul(VMInstruction &inst);
     void div(VMInstruction &inst);
+    void divr(VMInstruction &inst);
+    void adds(VMInstruction &inst);
+    void subs(VMInstruction &inst);
+    void muls(VMInstruction &inst);
+    void divs(VMInstruction &inst);
+    void divsr(VMInstruction &inst);
+    void addf(VMInstruction &inst);
+    void subf(VMInstruction &inst);
+    void mulf(VMInstruction &inst);
+    void divf(VMInstruction &inst);
+    void addfs(VMInstruction &inst);
+    void subfs(VMInstruction &inst);
+    void mulfs(VMInstruction &inst);
+    void divfs(VMInstruction &inst);
 
     VMInstruction fetch();
 };

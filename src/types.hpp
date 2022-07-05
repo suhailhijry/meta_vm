@@ -28,7 +28,7 @@ union VMWord {
     u32 udwords[2];
     s32 sdwords[2];
 
-    f32 fsingle[2];
+    f32 fsingles[2];
 
     u64          u;
     s64          s;
@@ -87,7 +87,7 @@ union VMWord {
     }
 
     VMWord(f32 value) {
-        fsingle[0] = value;
+        fsingles[0] = value;
     }
 };
 
@@ -110,7 +110,10 @@ enum VMOPCode {
     VMOPCODE_PUSH,      VMOPCODE_POP,
 
     // arithmetics
-    VMOPCODE_ADD,       VMOPCODE_SUB,     VMOPCODE_MUL,     VMOPCODE_DIV,
+    VMOPCODE_ADD,       VMOPCODE_SUB,     VMOPCODE_MUL,     VMOPCODE_DIV, VMOPCODE_DIVR,
+    VMOPCODE_ADDS,       VMOPCODE_SUBS,     VMOPCODE_MULS,     VMOPCODE_DIVS, VMOPCODE_DIVSR,
+    VMOPCODE_ADDF,       VMOPCODE_SUBF,     VMOPCODE_MULF,     VMOPCODE_DIVF,
+    VMOPCODE_ADDFS,      VMOPCODE_SUBFS,    VMOPCODE_MULFS,    VMOPCODE_DIVFS,
 };
 
 struct VMInstruction {

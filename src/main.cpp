@@ -18,6 +18,6 @@ int main() {
     vm.run();
     vm.printRegisters();
     vm.printExceptions();
-    vm.printMemory();
+    // vm.printMemory();
 }
 

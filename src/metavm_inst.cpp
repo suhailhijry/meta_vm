@@ -52,6 +52,26 @@ void MetaVM::pop(VMInstruction &inst) {
     }
 }
 
+u64 getUnsigned(VMOperandSize size, VMWord &value) {
+    switch (size) {
+        case VMOPSIZE_QWORD: return value.u;
+        case VMOPSIZE_DWORD: return value.udwords[0];
+        case VMOPSIZE_WORD: return value.uwords[0];
+        case VMOPSIZE_BYTE: return value.ubytes[0];
+        default: return 0;
+    }
+}
+
+s64 getSigned(VMOperandSize size, VMWord &value) {
+    switch (size) {
+        case VMOPSIZE_QWORD: return value.s;
+        case VMOPSIZE_DWORD: return value.sdwords[0];
+        case VMOPSIZE_WORD: return value.swords[0];
+        case VMOPSIZE_BYTE: return value.sbytes[0];
+        default: return 0;
+    }
+}
+
 void MetaVM::add(VMInstruction &inst) {
     VMOperand lhs = inst.operand1;
     VMOperand rhs = inst.operand2;
@@ -72,105 +92,18 @@ void MetaVM::add(VMInstruction &inst) {
             dstWord.ubytes[0] = lhsWord.ubytes[0] + rhsWord.ubytes[0];
         } break;
         case VMOPSIZE_WORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 word long
-            u16 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u16 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.uwords[0] = lhsValue + rhsValue;
         } break;
         case VMOPSIZE_DWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 dword long
-            u32 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u32 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.udwords[0] = lhsValue + rhsValue;
         } break;
         case VMOPSIZE_QWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 qword long
-            u64 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_QWORD:
-                    lhsValue = lhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u64 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_QWORD:
-                    rhsValue = rhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.u = lhsValue + rhsValue;
         } break;
     }
@@ -196,105 +129,18 @@ void MetaVM::sub(VMInstruction &inst) {
             dstWord.ubytes[0] = lhsWord.ubytes[0] - rhsWord.ubytes[0];
         } break;
         case VMOPSIZE_WORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 word long
-            u16 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u16 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.uwords[0] = lhsValue - rhsValue;
         } break;
         case VMOPSIZE_DWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 dword long
-            u32 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u32 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.udwords[0] = lhsValue - rhsValue;
         } break;
         case VMOPSIZE_QWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 qword long
-            u64 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_QWORD:
-                    lhsValue = lhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u64 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_QWORD:
-                    rhsValue = rhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.u = lhsValue - rhsValue;
         } break;
     }
@@ -320,105 +166,18 @@ void MetaVM::mul(VMInstruction &inst) {
             dstWord.ubytes[0] = lhsWord.ubytes[0] * rhsWord.ubytes[0];
         } break;
         case VMOPSIZE_WORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 word long
-            u16 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u16 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.uwords[0] = lhsValue * rhsValue;
         } break;
         case VMOPSIZE_DWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 dword long
-            u32 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u32 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.udwords[0] = lhsValue * rhsValue;
         } break;
         case VMOPSIZE_QWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 qword long
-            u64 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_QWORD:
-                    lhsValue = lhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u64 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_QWORD:
-                    rhsValue = rhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.u = lhsValue * rhsValue;
         } break;
     }
@@ -444,107 +203,418 @@ void MetaVM::div(VMInstruction &inst) {
             dstWord.ubytes[0] = lhsWord.ubytes[0] / rhsWord.ubytes[0];
         } break;
         case VMOPSIZE_WORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 word long
-            u16 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u16 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.uwords[0] = lhsValue / rhsValue;
         } break;
         case VMOPSIZE_DWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 dword long
-            u32 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u32 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.udwords[0] = lhsValue / rhsValue;
         } break;
         case VMOPSIZE_QWORD: {
-            // lhs and rhs can at least be 1 byte long and at most 1 qword long
-            u64 lhsValue = 0;
-            switch (lhs.size) {
-                case VMOPSIZE_QWORD:
-                    lhsValue = lhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    lhsValue = lhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    lhsValue = lhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    lhsValue = lhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
-            u64 rhsValue = 0;
-            switch (rhs.size) {
-                case VMOPSIZE_QWORD:
-                    rhsValue = rhsWord.u;
-                break;
-                case VMOPSIZE_DWORD:
-                    rhsValue = rhsWord.udwords[0];
-                break;
-                case VMOPSIZE_WORD:
-                    rhsValue = rhsWord.uwords[0];
-                break;
-                case VMOPSIZE_BYTE:
-                    rhsValue = rhsWord.ubytes[0];
-                break;
-                // NOTE: unreachable
-                default: return;
-            }
-
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(lhs.size, rhsWord);
             dstWord.u = lhsValue / rhsValue;
         } break;
     }
+}
+
+void MetaVM::divr(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_BYTE: {
+            // lhs and rhs are guaranteed to be 1 byte long
+            dstWord.ubytes[0] = lhsWord.ubytes[0] % rhsWord.ubytes[0];
+        } break;
+        case VMOPSIZE_WORD: {
+            u16 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u16 rhsValue = getUnsigned(lhs.size, rhsWord);
+            dstWord.uwords[0] = lhsValue % rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            u32 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u32 rhsValue = getUnsigned(lhs.size, rhsWord);
+            dstWord.udwords[0] = lhsValue % rhsValue;
+        } break;
+        case VMOPSIZE_QWORD: {
+            u64 lhsValue = getUnsigned(lhs.size, lhsWord);
+            u64 rhsValue = getUnsigned(lhs.size, rhsWord);
+            dstWord.u = lhsValue % rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::adds(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_BYTE: {
+            // lhs and rhs are guaranteed to be 1 byte long
+            dstWord.sbytes[0] = lhsWord.sbytes[0] + rhsWord.sbytes[0];
+        } break;
+        case VMOPSIZE_WORD: {
+            s16 lhsValue = getSigned(lhs.size, lhsWord);
+            s16 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.swords[0] = lhsValue + rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            s32 lhsValue = getSigned(lhs.size, lhsWord);
+            s32 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.sdwords[0] = lhsValue + rhsValue;
+        } break;
+        case VMOPSIZE_QWORD: {
+            s64 lhsValue = getSigned(lhs.size, lhsWord);
+            s64 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.s = lhsValue + rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::subs(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_BYTE: {
+            // lhs and rhs are guaranteed to be 1 byte long
+            dstWord.sbytes[0] = lhsWord.sbytes[0] - rhsWord.sbytes[0];
+        } break;
+        case VMOPSIZE_WORD: {
+            s16 lhsValue = getSigned(lhs.size, lhsWord);
+            s16 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.swords[0] = lhsValue - rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            s32 lhsValue = getSigned(lhs.size, lhsWord);
+            s32 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.sdwords[0] = lhsValue - rhsValue;
+        } break;
+        case VMOPSIZE_QWORD: {
+            s64 lhsValue = getSigned(lhs.size, lhsWord);
+            s64 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.s = lhsValue - rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::muls(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_BYTE: {
+            // lhs and rhs are guaranteed to be 1 byte long
+            dstWord.sbytes[0] = lhsWord.sbytes[0] * rhsWord.sbytes[0];
+        } break;
+        case VMOPSIZE_WORD: {
+            s16 lhsValue = getSigned(lhs.size, lhsWord);
+            s16 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.swords[0] = lhsValue * rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            s32 lhsValue = getSigned(lhs.size, lhsWord);
+            s32 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.sdwords[0] = lhsValue * rhsValue;
+        } break;
+        case VMOPSIZE_QWORD: {
+            s64 lhsValue = getSigned(lhs.size, lhsWord);
+            s64 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.s = lhsValue * rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::divs(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_BYTE: {
+            // lhs and rhs are guaranteed to be 1 byte long
+            dstWord.sbytes[0] = lhsWord.sbytes[0] / rhsWord.sbytes[0];
+        } break;
+        case VMOPSIZE_WORD: {
+            s16 lhsValue = getSigned(lhs.size, lhsWord);
+            s16 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.swords[0] = lhsValue / rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            s32 lhsValue = getSigned(lhs.size, lhsWord);
+            s32 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.sdwords[0] = lhsValue / rhsValue;
+        } break;
+        case VMOPSIZE_QWORD: {
+            s64 lhsValue = getSigned(lhs.size, lhsWord);
+            s64 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.s = lhsValue / rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::divsr(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (dst.type == VMOPTYPE_IMMEDIATE || dst.size < lhs.size || dst.size < rhs.size) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    switch (dst.size) {
+        case VMOPSIZE_BYTE: {
+            // lhs and rhs are guaranteed to be 1 byte long
+            dstWord.sbytes[0] = lhsWord.sbytes[0] % rhsWord.sbytes[0];
+        } break;
+        case VMOPSIZE_WORD: {
+            s16 lhsValue = getSigned(lhs.size, lhsWord);
+            s16 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.swords[0] = lhsValue % rhsValue;
+        } break;
+        case VMOPSIZE_DWORD: {
+            s32 lhsValue = getSigned(lhs.size, lhsWord);
+            s32 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.sdwords[0] = lhsValue % rhsValue;
+        } break;
+        case VMOPSIZE_QWORD: {
+            s64 lhsValue = getSigned(lhs.size, lhsWord);
+            s64 rhsValue = getSigned(lhs.size, rhsWord);
+            dstWord.s = lhsValue % rhsValue;
+        } break;
+    }
+}
+
+void MetaVM::addf(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_QWORD ||
+        lhs.size != VMOPSIZE_QWORD ||
+        rhs.size != VMOPSIZE_QWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.f = lhsWord.f + rhsWord.f;
+}
+
+void MetaVM::subf(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_QWORD ||
+        lhs.size != VMOPSIZE_QWORD ||
+        rhs.size != VMOPSIZE_QWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.f = lhsWord.f - rhsWord.f;
+}
+
+void MetaVM::mulf(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_QWORD ||
+        lhs.size != VMOPSIZE_QWORD ||
+        rhs.size != VMOPSIZE_QWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.f = lhsWord.f * rhsWord.f;
+}
+
+void MetaVM::divf(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_QWORD ||
+        lhs.size != VMOPSIZE_QWORD ||
+        rhs.size != VMOPSIZE_QWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.f = lhsWord.f / rhsWord.f;
+}
+
+void MetaVM::addfs(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_DWORD ||
+        lhs.size != VMOPSIZE_DWORD ||
+        rhs.size != VMOPSIZE_DWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.fsingles[0] = lhsWord.fsingles[0] + rhsWord.fsingles[0];
+}
+
+void MetaVM::subfs(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_DWORD ||
+        lhs.size != VMOPSIZE_DWORD ||
+        rhs.size != VMOPSIZE_DWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.fsingles[0] = lhsWord.fsingles[0] - rhsWord.fsingles[0];
+}
+
+void MetaVM::mulfs(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_DWORD ||
+        lhs.size != VMOPSIZE_DWORD ||
+        rhs.size != VMOPSIZE_DWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.fsingles[0] = lhsWord.fsingles[0] * rhsWord.fsingles[0];
+}
+
+void MetaVM::divfs(VMInstruction &inst) {
+    VMOperand lhs = inst.operand1;
+    VMOperand rhs = inst.operand2;
+    VMOperand dst = inst.operand3;
+
+    if (
+        dst.size != VMOPSIZE_DWORD ||
+        lhs.size != VMOPSIZE_DWORD ||
+        rhs.size != VMOPSIZE_DWORD ||
+        dst.type == VMOPTYPE_IMMEDIATE
+    ) {
+        _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
+        return;
+    }
+
+    VMWord &dstWord = getVMWord(dst);
+    VMWord &lhsWord = getVMWord(lhs);
+    VMWord &rhsWord = getVMWord(rhs);
+
+    dstWord.fsingles[0] = lhsWord.fsingles[0] / rhsWord.fsingles[0];
 }
 
