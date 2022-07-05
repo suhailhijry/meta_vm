@@ -13,7 +13,7 @@ struct MetaVM {
                  _memory(memory),
          _exceptions(exceptions)
     {
-        _registers.stackPointer = _memory.size();
+        _registers.data[30].u = _memory.size();
     }
 
     void run();

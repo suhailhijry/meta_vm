@@ -4,193 +4,13 @@
 
 VMInstruction MetaVM::fetch() {
     VMInstruction inst {}; 
-    switch (_registers.instructionPointer) {
-        case 0:
-            inst.opcode = VMOPCODE_MOV;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_QWORD,
-                0,
-                32,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_QWORD,
-                8,
-                0,
-            };
-        break;
-        case 1:
-            inst.opcode = VMOPCODE_PUSH;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_DWORD,
-                0,
-                32,
-            };
-        break;
-        case 2:
-            inst.opcode = VMOPCODE_PUSH;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_BYTE,
-                0,
-                64,
-            };
-        break;
-        case 3:
-            inst.opcode = VMOPCODE_POP;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_BYTE,
-                2,
-                0,
-            };
-        break;
-        case 4:
-            inst.opcode = VMOPCODE_MUL;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_BYTE,
-                2,
-                0,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_BYTE,
-                0,
-                64,
-            };
-            inst.operand3 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_QWORD,
-                17,
-                0,
-            };
-        break;
-        case 5:
-            inst.opcode = VMOPCODE_MOV;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_BYTE,
-                0,
-                -32,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_BYTE,
-                255,
-                0,
-            };
-        break;
-        case 6:
-            inst.opcode = VMOPCODE_DIVS;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_BYTE,
-                255,
-                0,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_BYTE,
-                0,
-                2,
-            };
-            inst.operand3 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_BYTE,
-                24,
-                0,
-            };
-        break;
-        case 7:
-            inst.opcode = VMOPCODE_MOV;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_DWORD,
-                0,
-                32.0f,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_DWORD,
-                46,
-                0,
-            };
-        break;
-        case 8:
-            inst.opcode = VMOPCODE_ADDFS;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_DWORD,
-                46,
-                0,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_DWORD,
-                0,
-                0.32f,
-            };
-            inst.operand3 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_DWORD,
-                46,
-                0,
-            };
-        break;
-        case 9:
-            inst.opcode = VMOPCODE_NOT;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_WORD,
-                68,
-                0,
-            };
-            inst.operand3 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_WORD,
-                68,
-                0,
-            };
-        break;
-        case 10:
-            inst.opcode = VMOPCODE_CALL;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_BYTE,
-                0,
-                12,
-            };
-        break;
-        case 11:
-            inst.opcode = VMOPCODE_HLT;
-        break;
-        case 12:
-            inst.opcode = VMOPCODE_MOV;
-            inst.operand1 = VMOperand {
-                VMOPTYPE_IMMEDIATE,
-                VMOPSIZE_BYTE,
-                0,
-                128,
-            };
-            inst.operand2 = VMOperand {
-                VMOPTYPE_REGISTER,
-                VMOPSIZE_QWORD,
-                24,
-                0,
-            };
-        break;
-        case 13:
-            inst.opcode = VMOPCODE_RET;
-        break;
+    switch (_registers.data[31].u) {
         default:
             inst.opcode = VMOPCODE_HLT;
         break;
     }
 
-    _registers.instructionPointer++;
+    _registers.data[31].u++;
     return inst;
 }
 
@@ -317,9 +137,6 @@ void MetaVM::run() {
 
 void MetaVM::printRegisters() {
     std::printf("REGISTERS:\n");
-    std::printf("IP: %#018llx ", _registers.instructionPointer);
-    std::printf("SP: %#018llx\n", _registers.stackPointer);
-    std::printf("DATA:\n");
     for (u8 i = 0; i < REGISTER_COUNT; ++i) {
         if (i != 0 && i % 8 == 0) {
             std::printf("\n");
@@ -368,7 +185,7 @@ u64 MetaVM::getIndirect(VMOperand const &operand) const {
 }
 
 u64 MetaVM::getDisplaced(VMOperand const &operand) const {
-    return _registers.data[operand.registerIndex].u + operand.value.u;
+    return _registers.data[operand.registerIndex].u + operand.value.s;
 }
 
 VMWord &MetaVM::getRegister(VMOperand const &operand) {
@@ -407,7 +224,7 @@ VMWord &MetaVM::getMemoryFromDisplaced(VMOperand const &operand) {
 }
 
 VMWord &MetaVM::getStackTop() const {
-    return *reinterpret_cast<VMWord *>(&_memory[_registers.stackPointer]);
+    return *reinterpret_cast<VMWord *>(&_memory[_registers.data[30].u]);
 }
 
 VMWord &MetaVM::getVMWord(VMOperand &operand) {

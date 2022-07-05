@@ -25,11 +25,11 @@ void MetaVM::mov(VMInstruction &inst) {
 void MetaVM::push(VMInstruction &inst) {
     VMOperand src = inst.operand1;
     u8 size = src.size;
-    if (_registers.stackPointer - size >= _memory.size()) {
+    if (_registers.data[30].u - size >= _memory.size()) {
         _exceptions.append(VMEXCEPT_STACK_OVERFLOW);
         return;
     }
-    _registers.stackPointer -= size;
+    _registers.data[30].u -= size;
     VMWord &stackTop = getStackTop();
     VMWord &srcVMWord = getVMWord(src);
 
@@ -41,12 +41,12 @@ void MetaVM::push(VMInstruction &inst) {
 void MetaVM::pop(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     u8 size = dst.size;
-    if (_registers.stackPointer + size >= _memory.size()) {
+    if (_registers.data[30].u + size >= _memory.size()) {
         _exceptions.append(VMEXCEPT_STACK_UNDERFLOW);
         return;
     }
     VMWord &stackTop = getStackTop();
-    _registers.stackPointer += size;
+    _registers.data[30].u += size;
     VMWord &dstVMWord = getVMWord(dst);
 
     for (u8 i = 0; i < size; ++i) {
@@ -801,20 +801,24 @@ void MetaVM::bitwise_not(VMInstruction &inst) {
 void MetaVM::jmp(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     
-    if (dst.value.u >= _bytecode.size()) {
+    VMWord &dstWord = getVMWord(dst);
+    
+    if (dstWord.u >= _bytecode.size()) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::jeq(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     VMOperand lhs = inst.operand2;
     VMOperand rhs = inst.operand3;
+
+    VMWord &dstWord = getVMWord(dst);
     
-    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+    if (dstWord.u >= _bytecode.size() || lhs.size != rhs.size) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
@@ -824,15 +828,17 @@ void MetaVM::jeq(VMInstruction &inst) {
 
     if (getUnsigned(lhs.size, lhsWord) != getUnsigned(rhs.size, rhsWord)) return;
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::jne(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     VMOperand lhs = inst.operand2;
     VMOperand rhs = inst.operand3;
+
+    VMWord &dstWord = getVMWord(dst);
     
-    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+    if (dstWord.u >= _bytecode.size() || lhs.size != rhs.size) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
@@ -842,7 +848,7 @@ void MetaVM::jne(VMInstruction &inst) {
 
     if (getUnsigned(lhs.size, lhsWord) == getUnsigned(rhs.size, rhsWord)) return;
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::jgt(VMInstruction &inst) {
@@ -850,7 +856,9 @@ void MetaVM::jgt(VMInstruction &inst) {
     VMOperand lhs = inst.operand2;
     VMOperand rhs = inst.operand3;
     
-    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+    VMWord &dstWord = getVMWord(dst);
+
+    if (dstWord.u >= _bytecode.size() || lhs.size != rhs.size) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
@@ -860,15 +868,17 @@ void MetaVM::jgt(VMInstruction &inst) {
 
     if (!(getUnsigned(lhs.size, lhsWord) > getUnsigned(rhs.size, rhsWord))) return;
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::jlt(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     VMOperand lhs = inst.operand2;
     VMOperand rhs = inst.operand3;
+
+    VMWord &dstWord = getVMWord(dst);
     
-    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+    if (dstWord.u >= _bytecode.size() || lhs.size != rhs.size) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
@@ -878,15 +888,17 @@ void MetaVM::jlt(VMInstruction &inst) {
 
     if (!(getUnsigned(lhs.size, lhsWord) < getUnsigned(rhs.size, rhsWord))) return;
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::jge(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     VMOperand lhs = inst.operand2;
     VMOperand rhs = inst.operand3;
+
+    VMWord &dstWord = getVMWord(dst);
     
-    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+    if (dstWord.u >= _bytecode.size() || lhs.size != rhs.size) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
@@ -896,15 +908,17 @@ void MetaVM::jge(VMInstruction &inst) {
 
     if (!(getUnsigned(lhs.size, lhsWord) >= getUnsigned(rhs.size, rhsWord))) return;
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::jle(VMInstruction &inst) {
     VMOperand dst = inst.operand1;
     VMOperand lhs = inst.operand2;
     VMOperand rhs = inst.operand3;
+
+    VMWord &dstWord = getVMWord(dst);
     
-    if (dst.value.u >= _bytecode.size() || lhs.size != rhs.size) {
+    if (dstWord.u >= _bytecode.size() || lhs.size != rhs.size) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
     }
@@ -914,7 +928,7 @@ void MetaVM::jle(VMInstruction &inst) {
 
     if (!(getUnsigned(lhs.size, lhsWord) <= getUnsigned(rhs.size, rhsWord))) return;
 
-    _registers.instructionPointer = dst.value.u;
+    _registers.data[31] = dst.value;
 }
 
 void MetaVM::call(VMInstruction &inst) {
@@ -924,6 +938,7 @@ void MetaVM::call(VMInstruction &inst) {
     VMOperandSize addressSize = address.size;
 
     u64 value = getUnsigned(addressSize, addressWord);
+    std::printf("bytecode length: %llu\n", _bytecode.size());
     if (value >= _bytecode.length()) {
         _exceptions.append(VMEXCEPT_INVALID_OPERANDS);
         return;
@@ -932,18 +947,18 @@ void MetaVM::call(VMInstruction &inst) {
     u8 size = VMOPSIZE_QWORD; 
 
     // make sure there's enough room for (at least) the instruction pointer
-    if (_registers.stackPointer - size >= _memory.size()) {
+    if (_registers.data[30].u - size >= _memory.size()) {
         _exceptions.append(VMEXCEPT_STACK_OVERFLOW);
         return;
     }
 
     // push the current instruction pointer to the stack
-    _registers.stackPointer -= size;
+    _registers.data[30].u -= size;
     VMWord &stackTop = getStackTop();
-    stackTop.u = _registers.instructionPointer;
+    stackTop = _registers.data[31];
 
     // make the next instruction the called code
-    _registers.instructionPointer = value;
+    _registers.data[31] = value;
 }
 
 void MetaVM::ret(VMInstruction &) {
@@ -957,9 +972,9 @@ void MetaVM::ret(VMInstruction &) {
 
     // take the top of the stack
     u8 size = VMOPSIZE_QWORD;
-    _registers.stackPointer += size;
+    _registers.data[30].u += size;
 
     // get save it back to the register
-    _registers.instructionPointer = stackTop.u;
+    _registers.data[31] = stackTop;
 }
 

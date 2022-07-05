@@ -137,11 +137,9 @@ struct VMInstruction {
 constexpr u64 REGISTER_COUNT = 32;
 
 struct VMRegisters {
-    u64 instructionPointer;
-    u64 stackPointer;       
-
     // general purpose registers
     // can also be used as floating point registers
+    // registers 30 and 31 are reserved
     VMWord data[REGISTER_COUNT] {};
 };
 
